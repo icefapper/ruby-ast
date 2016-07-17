@@ -1,0 +1,94 @@
+esc = '\' 't'
+      '\' 'n'
+      '\' 'f'
+      '\' 'v'
+      '\' 'r'
+      '\' 'e'
+      '\' 'a'
+      '\' 'b'
+      '\' 'x' (?:^<hex-digit>) == 0
+      '\' 'x' <hex>{1,}
+      '\' 's'
+      '\' 'M' '-' (<esc> not '\' 'M' not '\' 'u'|<ascii>) 
+      '\' 'C' '-',
+      '\' 'c' (<esc> not '\' 'C' not '\' 'u' not '\' 'c'|'?') or <ascii> 
+      '\' [0-7](?:[^0-7])
+      '\' [0-7][0-7](?:[^0-7])
+      '\' [0-7][0-7][0-7](?:[^0-7])
+      '\' '\'
+      '\' <any> == <any>
+
+esc-add = '\' <newline> == ''
+          <esc>
+
+str = str-begin str-data finish(str-begin) | hdoc
+
+if we are in ex mode, a '#' with a '$' | '{' | '@' after it will trigger interpolation which means an id must come after '$' or '@', and an expression must follow '{'
+
+a '\n' after an escape '\' will not  be discarded in qw ; in ex, it will be; otherwise, '\' will not be an escape, but an actual '\', as will be the '\n'
+
+'\' '\' will be '\' '\' in escape-mode; otherwise it will be '\'
+
+'\' 'u' will be '\' 'u' in non-ex mode; otherwise it will be a unicode escape
+
+if c comes after '\' and has not been still recognized as an esc:
+when in the re mode, if c is finish(str-begin) and is not a simple re-meta,  then '\' c is c; otherwise, c must start a   valid esc; otherwise,
+when in the ex mode, if escape-mode is also on '\' is added and c is used for starting an escape, otherwise,
+when in qw mode and isspace(c), '\' c will be c; otherwise,
+if c is not finish(str-begin) and !paren-or-c!=paren, '\' c will be '\', and c is re-used
+ 
+when in qw mode, an isspace-char will end the string
+
+special comments are: "coding", "frozen_string_literal","encoding", "warn_indent",and  "warn_past_scope"; they're marked by '-*-' and their contents must match           this:
+
+%r"([^\\s\'\":;]+)\\s*:\\s*(\"(?:\\\\.|[^\"])*\"|[^\"\\s;]+)[\\s;]*"
+
+numbers 
+0x<hex|_>*<hex>, 0b<b|_>*<b>, 0o<oct|_><oct>*, 0d<0-9_>*<0-9>, 0<0-7_>*<0-7>
+[1-9][0-9_]*[0-9]<float>?<suffix>?
+
+float
+<e>, .[0-9]([0-9_]*[0-9])?<e>?
+
+e
+[Ee][-+]?[0-9_]*[0-9],
+
+string |= qs
+
+qs
+?(<esc>|[^\:alnum:_]|[\:alnum:](!:\:idchar:))
+
+%w, %i  sw
+%Q dq
+%q sq
+%W, %I dw
+%r re
+%x xq
+%s symbl
+
+$_([^:idchar:]|[:idchar:]{1,})  
+$~
+$*
+$$
+$?
+$!
+$@
+$/
+$;
+$,
+$.
+$=
+$:
+$<
+$>
+$"
+$-[\:idchar:] else $
+$&
+$`
+$\
+$+ if re back else g
+$[num][num]* if re back else g
+$[:idchar]
+
+(?line-start)begin=\s((end=^\s)?.*<newline>)*end=\s
+

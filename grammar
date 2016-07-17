@@ -1,0 +1,782 @@
+%nonassoc  modifier_if modifier_unless modifier_while modifier_until
+%left  'or' 'and'
+%right 'not'
+%nonassoc keyword_defined
+%right '=' tOP_ASGN
+%left modifier_rescue
+%right '?' ':'
+%nonassoc tDOT2 tDOT3
+%left  tOROP
+%left  tANDOP
+%nonassoc  tCMP tEQ tEQQ tNEQ tMATCH tNMATCH
+%left  '>' tGEQ '<' tLEQ
+%left  '|' '^'
+%left  '&'
+%left  tLSHFT tRSHFT
+%left  '+' '-'
+%left  '*' '/' '%'
+%right tUMINUS_NUM tUMINUS
+%right tPOW
+%right '!' '~' tUPLUS
+
+%token tLAST_TOKEN
+
+program	:  top_compstmt /* last expression should not be void */
+top_compstmt: top_stmts opt_terms
+top_stmts: <none>
+        | top_stmt
+        | top_stmts terms top_stmt
+top_stmt: stmt
+	| 'BEGIN' '{' top_compstmt '}'
+
+bodystmt: compstmt rescue? else? ensure? // warn: "else without rescue is useless");
+compstmt: stmts terms?
+stmts: <none>
+     | stmt_or_begin
+     | stmts terms stmt_or_begin
+
+stmt_or_begin: stmt 
+             | 'BEGIN' /* error("BEGIN is permitted only at toplevel") */ '{' top_compstmt '}'
+stmt: 'alias' fitem fitem // {SET_LEX_STATE(EXPR_FNAME|EXPR_FITEM);}
+    | 'alias' tGVAR tGVAR
+    | 'alias' tGVAR tBACK_REF
+    | 'alias' tGVAR tNTH_REF // error("can't make alias for the number variables");
+    | 'undef' undef_list
+    | stmt 'if' expr_value
+    | stmt 'unless' expr_value
+    | stmt 'while' expr_value
+    | stmt 'until' expr_value
+    | stmt 'rescue' stmt
+    | 'END' '{' compstmt '}' // warn("END in method; use at_exit");
+    | command_asgn
+    | mlhs '=' command_call
+    | var_lhs tOP_ASGN command_call
+    | primary_value '[' opt_call_args rbracket tOP_ASGN command_call // $5 = ($5 == tANDOP) ? 1 : ($5 == tOROP) ? 0 : $5 
+    | primary_value call_op tIDENTIFIER tOP_ASGN command_call
+    | primary_value call_op tCONSTANT tOP_ASGN command_call
+    | primary_value '::' tCONSTANT tOP_ASGN command_call
+    | primary_value '::' tIDENTIFIER tOP_ASGN command_call
+    | backref tOP_ASGN command_call // backref_error($1);
+    | lhs '=' mrhs
+    | mlhs '=' mrhs_arg
+    | expr
+
+command_asgn: lhs '=' command_call
+	    | lhs '=' command_asgn
+
+expr		: command_call
+		| expr 'and' expr
+		| expr 'or' expr
+		| 'not' opt_nl expr
+		| '!' command_call
+		| arg
+
+expr_value: expr
+
+command_call: command
+	    | block_command
+
+block_command: block_call
+	     | block_call call_op2 operation2 command_args
+
+cmd_brace_block: tLBRACE_ARG opt_block_param compstmt '}'
+
+fcall: operation
+
+command: fcall command_args %prec tLOWEST
+       | fcall command_args cmd_brace_block // block_dup_check($2,$3);
+       | primary_value call_op operation2 command_args	%prec tLOWEST
+       | primary_value call_op operation2 command_args cmd_brace_block // block_dup_check($4,$5);
+       | primary_value tCOLON2 operation2 command_args	%prec tLOWEST
+       | primary_value tCOLON2 operation2 command_args cmd_brace_block // block_dup_check($4,$5);
+       | 'super' command_args
+       | 'yield' command_args
+       | 'return' call_args
+       | 'break' call_args
+       | 'next' call_args
+
+mlhs		: mlhs_basic
+		| '(' mlhs_inner rp
+
+mlhs_inner	: mlhs_basic
+		| '(' mlhs_inner rp
+		    
+
+mlhs_basic	: mlhs_head
+		| mlhs_head mlhs_item
+		| mlhs_head '*' mlhs_node
+		| mlhs_head '*' mlhs_node ',' mlhs_post
+		| mlhs_head '*' 
+		| mlhs_head '*' ',' mlhs_post
+		| '*' mlhs_node
+		| '*' mlhs_node ',' mlhs_post
+		| '*'
+		| '*' ',' mlhs_post
+
+mlhs_item	: mlhs_node
+		| '(' mlhs_inner rp
+
+mlhs_head	: mlhs_item ','
+		| mlhs_head mlhs_item ','
+
+mlhs_post	: mlhs_item
+		| mlhs_post ',' mlhs_item
+
+mlhs_node	: user_variable // assignable($1, 0);
+		| keyword_variable // assignable($1, 0);
+		| primary_value '[' opt_call_args rbracket
+		| primary_value call_op tIDENTIFIER
+		| primary_value '::' tIDENTIFIER
+		| primary_value call_op tCONSTANT
+		| primary_value '::' tCONSTANT // if (in_def || in_single) error("dynamic constant assignment");
+		| '::' tCONSTANT // if (in_def || in_single) error("dynamic constant assignment");
+		| backref // backref_error($1);
+
+lhs		: user_variable // assignable($1, 0);
+		| keyword_variable // assignable($1, 0);
+		| primary_value '[' opt_call_args rbracket
+		| primary_value call_op tIDENTIFIER
+		| primary_value '::' tIDENTIFIER
+		| primary_value call_op tCONSTANT
+		| primary_value tCOLON2 tCONSTANT // if (in_def || in_single) error("dynamic constant assignment");
+		| '::' tCONSTANT // if (in_def || in_single) error("dynamic constant assignment");
+		| backref // backref_error($1);
+
+cname		: tIDENTIFIER // error("class/module name must be CONSTANT");
+		| tCONSTANT
+
+cpath		: '::' cname
+		| cname
+		| primary_value '::' cname
+		 
+fname		: tIDENTIFIER
+		| tCONSTANT
+		| tFID
+		| op // SET_LEX_STATE(EXPR_ENDFN);
+		| reswords // SET_LEX_STATE(EXPR_ENDFN);
+
+fsym		: fname
+		| symbol
+
+fitem		: fsym
+                | dsym
+
+undef_list	: fitem
+		| undef_list ',' {SET_LEX_STATE(EXPR_FNAME|EXPR_FITEM);} fitem
+		 
+op		: '|'		
+		| '^'		
+		| '&'		
+		| '<=>'		
+		| '=='		
+		| '==='		
+		| '=~'
+		| '!='
+		| '>'		
+		| '>='		
+		| '<'		
+		| '<='		
+		| '!='		
+		| '<<'	 
+		| '>>'	 
+		| '+'		
+		| '-'		
+		| '*'		
+		| '/'		
+		| '%'		
+		| '**' 	
+		| '!'		
+		| '~'		
+		| '+' unary	 
+		| '-' unary
+		| '[]'	
+		| '[]='
+		| '`'		
+
+reswords	: __LINE__ | __FILE__ | __ENCODING__
+		| BEGIN | END
+		| alias | and | begin
+		| break | case | class | def
+		| defined | do | else | elsif
+		| end | ensure | false
+		| for | in | module | next
+		| nil | not | or | redo
+		| rescue | retry | return | self
+		| super | then | true | undef
+		| when | yield | if | unless
+		| while | until
+
+arg		: lhs '=' arg
+		| lhs '=' arg 'rescue' arg	
+		| var_lhs tOP_ASGN arg
+		| var_lhs tOP_ASGN arg 'rescue' arg
+		| primary_value '[' opt_call_args rbracket tOP_ASGN arg
+		| primary_value call_op tIDENTIFIER tOP_ASGN arg
+		| primary_value call_op tCONSTANT tOP_ASGN arg
+		| primary_value '::' tIDENTIFIER tOP_ASGN arg
+		| primary_value '::' tCONSTANT tOP_ASGN arg
+		| '::' tCONSTANT tOP_ASGN arg
+		| backref tOP_ASGN arg // backref_error($1);
+		| <unary-op> arg
+		| arg <b-op> arg
+        	| '-' simple_numeric '**' arg // ?
+		   {
+			$$ = NEW_CALL(call_bin_op($2, tPOW, $4), tUMINUS, 0);
+			$$ = dispatch3(binary, $2, ID2SYM(idPow), $4);
+			$$ = dispatch2(unary, ID2SYM(idUMinus), $$);
+		   }
+		| 'defined' opt_nl {in_defined = 1;} arg
+		| arg '?' arg opt_nl ':' arg
+		| primary
+
+arg_value	: arg
+
+aref_args	: none
+		| args trailer
+		| args ',' assocs trailer
+		| assocs trailer
+
+paren_args	: '(' opt_call_args rp
+		  
+opt_paren_args	: none
+		| paren_args
+
+opt_call_args	: none
+		| call_args
+		| args ','
+		| args ',' assocs ','
+		| assocs ','
+
+call_args	: command
+		| args opt_block_arg
+		| assocs opt_block_arg
+		| args ',' assocs opt_block_arg
+		| block_arg
+		  
+command_args	: call_args
+
+block_arg	: '&' arg_value
+		   
+opt_block_arg	: ',' block_arg
+		| none
+
+args		: arg_value
+		| '*' arg_value
+		| args ',' arg_value
+		| args ',' '*' arg_value
+
+mrhs_arg	: mrhs
+		| arg_value
+
+mrhs		: args ',' arg_value
+		| args ',' '*' arg_value
+		| '*' arg_value
+
+primary		: literal
+		| strings
+		| xstring
+		| regexp
+		| words
+		| qwords
+		| symbols
+		| qsymbols
+		| var_ref
+		| backref
+		| tFID
+		| 'begin' bodystmt 'end'
+		| tLPAREN_ARG {SET_LEX_STATE(EXPR_ENDARG);} rp
+		| tLPAREN_ARG expr {SET_LEX_STATE(EXPR_ENDARG);} rp
+		| '(' compstmt rp
+		| primary_value '::' tCONSTANT
+		| '::' tCONSTANT
+		| '[' aref_args ']'
+		| '{' assoc_list '}'
+		| 'return' 
+		| 'yield' '(' call_args rp 
+		| 'yield' '(' rp 
+		| 'yield'
+		| 'defined' opt_nl '(' {in_defined = 1;} expr rp
+		| 'not' '(' expr rp
+		| 'not' '(' rp
+		| fcall brace_block
+		| method_call
+		| method_call brace_block
+		| '->' lambda
+		| 'if' expr_value then compstmt if_tail 'end'
+		| 'unless' expr_value then compstmt opt_else 'end'
+		| 'while' {COND_PUSH(1);} expr_value do {COND_POP();} compstmt 'end'
+		| 'until' {COND_PUSH(1);} expr_value do {COND_POP();} compstmt 'end'
+		| 'case' expr_value opt_terms case_body 'end'
+		| 'case' opt_terms case_body 'end'
+		| 'for' for_var 'in' {COND_PUSH(1);} expr_value do {COND_POP();} compstmt 'end'
+		    {
+			/*
+			 *  for a, b, c in e
+			 *  #=>
+			 *  e.each{|*x| a, b, c = x}
+			 *
+			 *  for a in e
+			 *  #=>
+			 *  e.each{|x| a, = x}
+			 */
+
+			switch (nd_type($2)) {
+			  case NODE_MASGN:
+			    m->nd_next = node_assign($2, NEW_FOR(NEW_DVAR(id), 0, 0));
+			    args = new_args(m, 0, id, 0, new_args_tail(0, 0, 0));
+			    break;
+			  case NODE_LASGN:
+			  case NODE_DASGN:
+			  case NODE_DASGN_CURR:
+			    $2->nd_value = NEW_DVAR(id);
+			    m->nd_plen = 1;
+			    m->nd_next = $2;
+			    args = new_args(m, 0, 0, 0, new_args_tail(0, 0, 0));
+			    break;
+			  default:
+			    m->nd_next = node_assign(NEW_MASGN(NEW_LIST($2), 0), NEW_DVAR(id));
+			    args = new_args(m, 0, id, 0, new_args_tail(0, 0, 0));
+			    break;
+			}
+		    }
+		| 'class' cpath superclass /* if (in_def || in_single) error("class definition in method body"); */  bodystm k_end
+		| 'class' '<<' expr
+		    {
+			$<num>$ = (in_def << 1) | in_single;
+			in_def = 0;
+			in_single = 0;
+			local_push(0);
+		    }
+		  term bodystmt
+		  'end'
+		    {
+			local_pop();
+			in_def = ($<num>4 >> 1) & 1;
+			in_single = $<num>4 & 1;
+		    }
+		| 'module' cpath /* if (in_def || in_single) error("module definition in method body"); */ bodystmt 'end'
+		| 'def' fname
+		    
+		    {
+			$<num>$ = in_def;
+			in_def = 1;
+		    }
+		  f_arglist bodystmt
+		  'end'
+		 
+		| 'def' singleton dot_or_colon {SET_LEX_STATE(EXPR_FNAME);} fname
+		    {
+			$<num>4 = in_single;
+			in_single = 1;
+			SET_LEX_STATE(EXPR_ENDFN|EXPR_LABEL); /* force for args */
+			local_push(0);
+			$<id>$ = current_arg;
+			current_arg = 0;
+		    }
+		  f_arglist bodystmt
+		  'end'
+		| 'break'
+		| 'retry'
+		| 'next'
+		| 'redo'
+
+primary_value	: primary
+
+then		: term
+		| 'then'
+		| term 'then'
+
+do		: term
+		| 'do'
+
+if_tail		: opt_else
+		| 'elsif' expr_value then compstmt if_tail
+
+opt_else	: none
+		| 'else' compstmt
+	
+for_var		: lhs
+		| mlhs
+
+f_marg		: f_norm_arg // assignable($1, 0);
+		| '(' f_margs rp
+
+f_marg_list	: f_marg
+		| f_marg_list ',' f_marg
+
+f_margs		: f_marg_list
+		| f_marg_list ',' '*' f_norm_arg	
+		| f_marg_list ',' '*' f_norm_arg ',' f_marg_list // assignable($4, 0);
+		| f_marg_list ',' '*'
+		| f_marg_list ',' '*' ',' f_marg_list
+		| '*' f_norm_arg // assignable($2, 0);
+		| '*' f_norm_arg ',' f_marg_list // assignable($2, 0);
+		| '*'
+		| '*' ',' f_marg_list
+
+block_args_tail	: f_block_kwarg ',' f_kwrest opt_f_block_arg
+		| f_block_kwarg opt_f_block_arg
+		| f_kwrest opt_f_block_arg
+		| f_block_arg
+
+opt_block_args_tail : ',' block_args_tail
+		| none
+
+block_param	: f_arg ',' f_block_optarg ',' f_rest_arg opt_block_args_tail
+		| f_arg ',' f_block_optarg ',' f_rest_arg ',' f_arg opt_block_args_tail
+		| f_arg ',' f_block_optarg opt_block_args_tail
+		| f_arg ',' f_block_optarg ',' f_arg opt_block_args_tail
+                | f_arg ',' f_rest_arg opt_block_args_tail
+		| f_arg ','
+		| f_arg ',' f_rest_arg ',' f_arg opt_block_args_tail
+		| f_arg opt_block_args_tail
+		| f_block_optarg ',' f_rest_arg opt_block_args_tail
+		| f_block_optarg ',' f_rest_arg ',' f_arg opt_block_args_tail
+		| f_block_optarg opt_block_args_tail
+		| f_block_optarg ',' f_arg opt_block_args_tail
+		| f_rest_arg opt_block_args_tail
+		| f_rest_arg ',' f_arg opt_block_args_tail
+		| block_args_tail
+
+opt_block_param	: none
+		| block_param_def
+
+block_param_def	: '|' opt_bv_decl '|'
+		| '||'
+		| '|' block_param opt_bv_decl '|'
+
+opt_bv_decl	: opt_nl
+		| opt_nl ';' bv_decls opt_nl
+		    
+bv_decls	: bvar
+		| bv_decls ',' bvar
+
+bvar		: tIDENTIFIER
+		| f_bad_arg
+
+lambda		:   f_larglist lambda_body
+
+f_larglist	: '(' f_args opt_bv_decl ')'
+		| f_args
+
+lambda_body	: '{' compstmt '}'
+		| 'do' compstmt 'end'
+
+do_block	: 'do' opt_block_param compstmt 'end'
+
+block_call	: command do_block // if (nd_type($1) == NODE_YIELD)  compile_error(PARSER_ARG "block given to yield");
+		                   // else { block_dup_check($1->nd_args, $2);  }
+		| block_call call_op2 operation2 opt_paren_args
+		| block_call call_op2 operation2 opt_paren_args brace_block
+		| block_call call_op2 operation2 command_args do_block
+
+method_call	: fcall paren_args
+		| primary_value call_op operation2 opt_paren_args
+		| primary_value '::' operation2 paren_args
+		| primary_value '::' operation3
+		| primary_value call_op paren_args
+		| primary_value '::' paren_args
+		| 'super' paren_args
+		| 'super'
+		| primary_value '[' opt_call_args rbracket
+
+brace_block	: '{' opt_block_param compstmt '}'
+		| 'do' opt_block_param compstmt 'end'
+
+case_body	: 'when' args then compstmt cases
+
+cases		: opt_else
+		| case_body
+
+opt_rescue	: 'rescue' exc_list exc_var then compstmt opt_rescue
+		| none
+
+exc_list	: arg_value
+		| mrhs
+		| none
+
+exc_var		: '=>' lhs
+		| none
+
+opt_ensure	: 'ensure' compstmt
+		| none
+
+literal		: numeric
+		| symbol
+		| dsym
+
+strings		: string
+
+string		: tCHAR
+		| string1
+		| string string1
+
+string1		: tSTRING_BEG string_contents tSTRING_END
+
+xstring		: tXSTRING_BEG xstring_contents tSTRING_END
+regexp		: tREGEXP_BEG regexp_contents tREGEXP_END
+
+words		: tWORDS_BEG ' ' tSTRING_END
+		| tWORDS_BEG word_list tSTRING_END
+
+word_list	: none
+		| word_list word ' '
+
+word		: string_content
+		| word string_content
+
+symbols 	: tSYMBOLS_BEG ' ' tSTRING_END
+		| tSYMBOLS_BEG symbol_list tSTRING_END
+
+symbol_list	: none
+		| symbol_list word ' '
+
+qwords		: tQWORDS_BEG ' ' tSTRING_END
+		| tQWORDS_BEG qword_list tSTRING_END
+
+qsymbols	: tQSYMBOLS_BEG ' ' tSTRING_END
+		| tQSYMBOLS_BEG qsym_list tSTRING_END
+
+qword_list	:  none 
+		| qword_list tSTRING_CONTENT ' '
+
+qsym_list	: none
+		| qsym_list tSTRING_CONTENT ' '
+
+string_contents : none
+		| string_contents string_content
+
+xstring_contents: none
+		| xstring_contents string_content
+
+regexp_contents:  none 
+		| regexp_contents string_content
+	
+string_content	: tSTRING_CONTENT
+		| tSTRING_DVAR string_dvar
+		| tSTRING_DBEG compstmt tSTRING_DEND
+	
+string_dvar	: tGVAR
+		| tIVAR
+		| tCVAR
+		| backref
+
+symbol		: tSYMBEG sym
+
+sym		: fname
+		| tIVAR
+		| tGVAR
+		| tCVAR
+
+dsym		: tSYMBEG xstring_contents tSTRING_END
+
+numeric 	: simple_numeric
+		| tUMINUS_NUM simple_numeric   %prec tLOWEST
+
+simple_numeric	: tINTEGER
+		| tFLOAT
+		| tRATIONAL
+		| tIMAGINARY
+		;
+
+user_variable	: tIDENTIFIER
+		| tIVAR
+		| tGVAR
+		| tCONSTANT
+		| tCVAR
+		;
+
+keyword_variable: 'false' 
+		| 'true' 
+        	| 'nil' 
+        	| 'self' 
+		| '__FILE__' 
+		| '__LINE__' 
+		| '__ENCODING__' 
+
+var_ref		: user_variable
+		| keyword_variable
+
+var_lhs		: user_variable // assignable($1, 0);
+		| keyword_variable // assignable($1, 0);
+			
+backref		: tNTH_REF
+		| tBACK_REF
+
+superclass	: '<' expr_value term
+		| none
+
+f_arglist	: '(' f_args rp
+		|   {
+			$<num>$ = parser->in_kwarg;
+			parser->in_kwarg = 1;
+			lex_state |= EXPR_LABEL; /* force for args */
+		    }
+		    f_args term
+		    {
+			parser->in_kwarg = !!$<num>1;
+			$$ = $2;
+			SET_LEX_STATE(EXPR_BEG);
+			command_start = TRUE;
+		    }
+
+args_tail	: f_kwarg ',' f_kwrest opt_f_block_arg
+		| f_kwarg opt_f_block_arg
+		| f_kwrest opt_f_block_arg
+		| f_block_arg
+
+opt_args_tail	: ',' args_tail
+		|  none 
+
+f_args		: f_arg ',' f_optarg ',' f_rest_arg opt_args_tail
+		| f_arg ',' f_optarg ',' f_rest_arg ',' f_arg opt_args_tail
+		| f_arg ',' f_optarg opt_args_tail
+		| f_arg ',' f_optarg ',' f_arg opt_args_tail
+		| f_arg ',' f_rest_arg opt_args_tail
+		| f_arg ',' f_rest_arg ',' f_arg opt_args_tail
+		| f_arg opt_args_tail
+		| f_optarg ',' f_rest_arg opt_args_tail
+		| f_optarg ',' f_rest_arg ',' f_arg opt_args_tail
+		| f_optarg opt_args_tail
+		| f_optarg ',' f_arg opt_args_tail
+		| f_rest_arg opt_args_tail
+		| f_rest_arg ',' f_arg opt_args_tail
+		| args_tail
+		| none
+
+f_bad_arg	: tCONSTANT // error("formal argument cannot be a constant");
+		| tIVAR // error("formal argument cannot be an instance variable");
+		| tGVAR // error("formal argument cannot be a global variable");
+		| tCVAR // error("formal argument cannot be a class variable");
+
+f_norm_arg	: f_bad_arg
+		| tIDENTIFIER //  formal_argument(get_id($1));
+
+f_arg_asgn	: f_norm_arg // arg_var(id);
+
+f_arg_item	: f_arg_asgn
+		| tLPAREN f_margs rparen // arg_var(tid);
+
+f_arg		: f_arg_item
+		| f_arg ',' f_arg_item
+
+f_label 	: tLABEL
+
+f_kw		: f_label arg_value // assignable($1, $2);
+		| f_label // assignable($1, (NODE *)-1);
+
+f_block_kw	: f_label primary_value // assignable($1, $2);
+		| f_label // assignable($1, (NODE *)-1);
+
+f_block_kwarg	: f_block_kw
+		| f_block_kwarg ',' f_block_kw
+
+f_kwarg		: f_kw
+		| f_kwarg ',' f_kw
+
+kwrest_mark	: '**'
+
+f_kwrest	: kwrest_mark tIDENTIFIER // shadowing_lvar(get_id($2));
+		| kwrest_mark // arg_var($$);
+
+f_opt		: f_arg_asgn '=' arg_value // assignable($1, $3);
+
+f_block_opt	: f_arg_asgn '=' primary_value // assignable($1, $3);
+
+f_block_optarg	: f_block_opt
+		| f_block_optarg ',' f_block_opt
+
+f_optarg	: f_opt
+		| f_optarg ',' f_opt
+
+restarg_mark	: '*'
+
+f_rest_arg	: restarg_mark tIDENTIFIER // if (!is_local_id($2)) error("rest argument must be local variable");
+		                           // arg_var(shadowing_lvar(get_id($2)));
+		| restarg_mark
+
+blkarg_mark	: '&'
+
+f_block_arg	: blkarg_mark tIDENTIFIER // if (!is_local_id($2)) error("block argument must be local variable");
+		                          // else if (!dyna_in_block() && local_id($2)) error("duplicated block argument name");
+
+opt_f_block_arg	: ',' f_block_arg
+		| none
+
+singleton	: var_ref
+		| '(' {SET_LEX_STATE(EXPR_BEG);} expr ')' // if ($3 == 0) { error("can't define singleton method for ().");  }
+		 /*	else {
+			    switch (nd_type($3)) {
+			      case NODE_STR:
+			      case NODE_DSTR:
+			      case NODE_XSTR:
+			      case NODE_DXSTR:
+			      case NODE_DREGX:
+			      case NODE_LIT:
+			      case NODE_ARRAY:
+			      case NODE_ZARRAY:
+				error("can't define singleton method for literals"); */
+			      default:
+				value_expr($3);
+				break;
+			    }
+			}
+		    
+		
+
+assoc_list	: none
+		| assocs trailer
+
+assocs		: assoc
+		| assocs ',' assoc
+
+assoc		: arg_value tASSOC arg_value
+		| tLABEL arg_value
+		| tSTRING_BEG string_contents tLABEL_END arg_value
+		| tDSTAR arg_value
+
+operation	: tIDENTIFIER
+		| tCONSTANT
+		| tFID
+
+operation2	: tIDENTIFIER
+		| tCONSTANT
+		| tFID
+		| op
+
+operation3	: tIDENTIFIER
+		| tFID
+		| op
+
+dot_or_colon	: '.'
+		| '::'
+
+call_op 	: '.'
+		| '&.'
+
+call_op2	: call_op
+		| '::'
+	
+opt_terms	: none
+		| terms
+
+opt_nl		: none
+		| '\n'
+
+rparen		: opt_nl ')'
+
+rbracket	: opt_nl ']'
+
+trailer		: none
+		| '\n'
+		| ','
+
+term		: ';' {yyerrok;}
+		| '\n'
+
+terms		: term
+		| terms ';' {yyerrok;}
+
+none		: /* none */
+
+
