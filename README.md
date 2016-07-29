@@ -2,7 +2,7 @@
 This project aims to standardize an AST format for Ruby in the same way [ESTree](https://github.com/estree/estree) project is doing so for ECMAScript. It is still an a very early state, and any contributions or suggestion are most welcome.
 
 
-
+#Node
 ```js 
 interface Node { // A syntax node
      start: number;
@@ -11,6 +11,7 @@ interface Node { // A syntax node
 }
 ```
 
+#Location
 ```js
 interface Location {
      line: number;
@@ -18,6 +19,7 @@ interface Location {
 }
 ```
 
+#SourceLocation
 ```js
 interface SourceLocation {
      source: string; // program's code
@@ -26,6 +28,7 @@ interface SourceLocation {
 }
 ```
 
+#Program
 ```js
 interface Program {
    body: [StatementExpression|BEGIN];
@@ -33,13 +36,15 @@ interface Program {
 }
 ```
 
+#BEGIN Expression
 ```js
 interface BEGIN { 
    body: [StatementExpression|BEGIN]
 
 }
 ```
-A 'BEGIN' expression:
+A 'BEGIN' expression.
+##example
 ```ruby
 BEGIN {
   def l() return end
@@ -47,6 +52,7 @@ BEGIN {
 }
 ```
 
+#Body
 ```js
 interface Body {
     block: [StatementExpression]
@@ -55,7 +61,8 @@ interface Body {
     alternate: [StatementExpression]
 }
 ```
-A method or block or 'begin' body:
+A method or block or 'begin' body.
+##example
 ```ruby
 begin #<body>
               #<block>
@@ -74,23 +81,27 @@ ensure #finalizer
 end #</body>
 ```
        
+#Alias Expression
 ```js
 interface AliasExpression <: StatementExpression {
     old: Identifier
     new: Identifier
 }
 ```
-An 'alias' expression:
+An 'alias' expression.
+##example
 ```ruby
 alias _new _old
 ```
 
+#Undef Expression
 ```js
 interface UndefExpression <: StatementExpression {
      arguments: [Identifier]
 }
 ```
-An 'undef' expression; think of it as reversing a 'def':
+An 'undef' expression; think of it as reversing a 'def'.
+##example
 ```ruby
 def l() 12 end
 print l # prints '12'
@@ -99,13 +110,15 @@ undef l
 print l # will throw, because 'l' is no undefined
 ```
 
+#Modified Statement Expression
 ```js 
 interface ModiefiedStatementExpression <: StatementExpression {
     modifier: 'if'|'unless'|'while'|'until';
     test: Expression;
 }
 ```
-A top level expression followed by 'if', 'unless', 'while', or 'until':
+A top level expression followed by 'if', 'unless', 'while', or 'until'.
+##example
 ```ruby
 alias _new _old if false and _old < 12
 def l() 12 end unless defined? :l
@@ -114,12 +127,14 @@ print "12" until true
 l = nil or l = 12 if false
 ```
 
+#END Statement
 ```js
 interface END {
       body: [StatementExpression];
 }
 ```
-An 'END' top-level expression:
+An 'END' top-level statement.
+##example
 ```ruby
 END {
    print "this runs on exit"
@@ -128,6 +143,7 @@ END {
 print "this runs on start"
 ```
 
+#Assignment Expression
 ```js
 interface AssignmentExpression {
     operator: string;
@@ -135,12 +151,14 @@ interface AssignmentExpression {
     right: [MultipleAssignmentList|Expression] 
 }
 ```
-An assignment expression; a list is allowed on its left as well as on its right if it is in top-level:
+An assignment expression; a list is allowed on its left as well as on its right if it is in top-level.
+##example
 ```ruby
 a, b = 12, 'l' #is the same as (a, b) = (12, 'l')
 print a, b = 12, 'l' #is the same as print( a, (b=12), 'l' )
 ```
 
+#Command
 ```js
 interface Command {
    block: CommandBlock | (null if arguments != null)
@@ -148,7 +166,8 @@ interface Command {
    name: Identifier
 }
 ```
-A command with non-null argument list and/or non-null block:
+A command with non-null argument list and/or non-null block. When in the top-level, parentheses can be dropped for arguemnt list.
+##example
 ```ruby
 print "l" do 12 end
 print "l" { 12 }
@@ -164,8 +183,9 @@ print { 12 } # please note the {12} thing is not a dictionary; it is a block
 print "l"
 print "l", 12
 print( "l", 12) 
-```ruby
+```
 
+#IdCommand
 ```js
 interface IdCommand <: Identifier, Command {
    block: null
@@ -173,7 +193,8 @@ interface IdCommand <: Identifier, Command {
    name: Identifier
 }
 ```
-Either a command with neither an argument list nor a block, or a simple identifier:
+Either a command with neither an argument list nor a block, or a simple identifier.
+##example
 ```ruby
 def l() 12 end
 l #this is an IdCommand resolving to a command at run time
@@ -182,13 +203,15 @@ l = 12
 l # this is an IdCommand resolving to a simple identifier at run time
 ```   
 
+#Method Call Expression
 ```js
 interface MethodCall <: Command {
      name: MethodIdentifier
      object: Expression;
 }
 ```
-A method being called on an object:
+A method being called on an object.
+##example
 ```ruby
 a.b 12 # object: a, name: b
 a.- 12 # object: a, name: -
@@ -197,12 +220,14 @@ a.- 12 # object: a, name: -
 0.~ # object: 0, name: ~
 ```
  
+#Super Call Expression
 ```js
 interface SuperCall <: Command {
     type: 'SuperCall';
 }
 ```
-A super call; the syntax is identical to that of an ordinary command:
+A super call; the syntax is identical to that of an ordinary command.
+##example
 ```ruby
 class L < SomeOtherClass
    def e()
@@ -213,16 +238,19 @@ class L < SomeOtherClass
 end
 ```
    
+#Yield Call Expression
 ```js
 interface YieldCall <: Command {
      type: 'YieldCall';
 }
 ```
-A yield call; the syntax is identical to that of an ordinary command:
+A yield call; the syntax is identical to that of an ordinary command.
+##example
 ```ruby
 print { yield "l" do 12 end }
 ```
 
+#Void Expression
 ```js
 interface VoidExpression {}
 ```
@@ -280,12 +308,14 @@ Finally, multi-component block expressions (like 'if' with an 'else', or 'begin'
   end
 ```         
 
+#Return Expression
 ```js
 interface ReturnExpression <: VoidExpression {
     arguments: Arguments;
 }
 ```
-A return expression:
+A return expression.
+##example
 ```ruby
 def l()
    return 12, *[12, 12]
@@ -300,17 +330,20 @@ def w(l)
 end
 ```  
 
+#Break Expression
 ```js
 interface BreakExpression <: VoidExpression {
    arguments: Arguments;
 }
 ```
 A break expression:
+##example
 ```ruby
 while false;  break 12, *[12] end
 while false;  break end
 ```
 
+#Multiple Assignment List Pattern
 ```js
 MultipleAssignmentListPattern {
     head: [AssignmentPatternElement]|null
@@ -318,12 +351,14 @@ MultipleAssignmentListPattern {
     tail: [AssignmentPatternElement]|null
 }
 ```
-The left hand side of a top-level assignment expression:
+The left hand side of a top-level assignment expression.
+##example
 ```ruby
 a, (b[0], (c, *e)), (*), = [12, [12, [12]], 12, 12, 12, 12, 12, 12, 12, 12, 12]
 # a: 12, b[0]: 12, c: 12, e: []
 ```
 
+#Multiple Assignment List
 ```js
 MultipleAssignmentList {
     head: [AssignmentElement]|null
@@ -331,21 +366,22 @@ MultipleAssignmentList {
     tail: [AssignmentElement]|null
 }
 ```
-The right hand side of a top-level assignment expression:
+The right hand side of a top-level assignment expression.
+##example
 ```ruby
 l = 12, *[12], *[12]
 ```
 
+#Next Expression
 ```js
 interface NextExpression <: VoidExpression {
    arguments: Arguments
 }
 ```
 A next expression.
+##example
 ```ruby
 while false; next 12, *[12] end
 while false; false ? next : return end
 ```
- 
 
-       
