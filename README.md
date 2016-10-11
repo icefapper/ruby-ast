@@ -254,7 +254,19 @@ print { yield "l" do 12 end }
 ```js
 interface VoidExpression {}
 ```
-A void expression; it is mostly a euphemism for a 'statement' since Everything Is An Expression (TM) in ruby; the only reason things like 'return', 'break', 'continue', or 'next' are still called expressions in ruby is that, they can be used in a conditional:
+A void expression; void expressions are distinguished from "value" expression, probably to keep programmers from doing crazy things like:
+```ruby
+while true; a = (break); end
+print a
+```
+
+It is rather off-the-mark though, because it still allows programmers to do crazy things like:
+```ruby
+while true; a = true && (break); end
+print a
+```
+
+It is mostly a euphemism for a 'statement' since Everything Is An Expression (TM) in ruby; the only reason things like 'return', 'break', 'continue', or 'next' are still called expressions in ruby is that, they can be used in a conditional:
 ```ruby
 while true do
   l = false
@@ -263,9 +275,9 @@ end
 ```
 Please note the conditional above is itself a void expression; actually, if the consequent and/or alternate of a conditional is a void expression, the conditional is void as a whole; one caveat to beware with void 'expression's is that, they are not combinable(nor compatible) with non-void expressions (a 'non-void expression' is, tautologically, an expression with a value)
 ```ruby
-false ? 12 : 'l' # will parse; 12 and 'l' are 'value' expressions
-false ? next: 12 # won't parse; 12 and next are incompatible
-false ? next: break # will parse; next and break are compatible
+false ? 12 : 'l' # is not a void-expression; 12 and 'l' are 'value' expressions
+false ? next: 12 # void-expression, because next is a void expression
+false ? next: break # void-expression; next and break are void expressions
 ```
 
 furthermore, they can not be used as sub-expressions, because they have no inherent value (i.e., they are not even nil; hence the name 'void'):
